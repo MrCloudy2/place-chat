@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Infinite Sandbox with Chat</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Infinite Sandbox -->
+    <div id="sandbox-container">
+        <canvas id="sandbox"></canvas>
+        <div id="tools">
+            <button id="add-dirt">Add Dirt</button>
+            <button id="remove-dirt">Remove Dirt</button>
+            <input type="color" id="color-picker" value="#8B4513">
+        </div>
+        <div id="user-list-container">
+            <h3>Users</h3>
+            <ul id="user-list"></ul>
+        </div>
+    </div>
+
+    <!-- Chat -->
+    <div id="chat-container">
+        <ul id="messages"></ul>
+        <form id="chat-form">
+            <input id="message-input" autocomplete="off" placeholder="Type a message..." />
+            <button>Send</button>
+        </form>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
