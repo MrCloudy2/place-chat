@@ -132,6 +132,27 @@ canvas.addEventListener('mouseleave', () => {
     isDrawing = false; // Stop drawing if mouse leaves canvas
 });
 
+// Touch Events
+canvas.addEventListener('touchstart', (event) => {
+    event.preventDefault(); // Prevent scrolling
+    isDrawing = true;
+
+    const touch = event.touches[0];
+    handleDraw(touch);
+});
+canvas.addEventListener('touchmove', (event) => {
+    if (isDrawing) {
+        event.preventDefault(); // Prevent scrolling
+        const touch = event.touches[0];
+        handleDraw(touch);
+    }
+});
+canvas.addEventListener('touchend', () => {
+    isDrawing = false;
+});
+
+
+
 // Brush size slider
 const brushSizeInput = document.getElementById('brush-size');
 brushSizeInput.addEventListener('input', (event) => {
@@ -140,8 +161,12 @@ brushSizeInput.addEventListener('input', (event) => {
 
 
 
-function handleDraw(event) {
-    const { x, y } = screenToSandbox(event.clientX, event.clientY);
+function handleDraw(inputEvent) {
+    // Determine if inputEvent is a mouse event or touch event
+    const clientX = inputEvent.clientX || inputEvent.pageX;
+    const clientY = inputEvent.clientY || inputEvent.pageY;
+
+    const { x, y } = screenToSandbox(clientX, clientY);
 
     if (x >= 0 && y >= 0 && x < sandbox[0].length && y < sandbox.length) {
         if (currentTool === 'add-pixel') {
@@ -149,7 +174,6 @@ function handleDraw(event) {
             socket.emit('update grid', { x, y, value: currentColor });
             drawCell(x, y);
         } else if (currentTool === 'remove-pixel') {
-            // Remove pixels within the brush radius
             for (let offsetY = -removeBrushSize; offsetY <= removeBrushSize; offsetY++) {
                 for (let offsetX = -removeBrushSize; offsetX <= removeBrushSize; offsetX++) {
                     const brushX = x + offsetX;
@@ -171,6 +195,7 @@ function handleDraw(event) {
         }
     }
 }
+
 
 
 
