@@ -132,7 +132,12 @@ canvas.addEventListener('mouseleave', () => {
     isDrawing = false; // Stop drawing if mouse leaves canvas
 });
 
-let removeBrushSize = 3; // Brush size for removing pixels (in grid cells)
+// Brush size slider
+const brushSizeInput = document.getElementById('brush-size');
+brushSizeInput.addEventListener('input', (event) => {
+    removeBrushSize = parseInt(event.target.value, 10);
+});
+
 
 
 function handleDraw(event) {
@@ -166,11 +171,6 @@ function handleDraw(event) {
         }
     }
 }
-// Brush size slider
-const brushSizeInput = document.getElementById('brush-size');
-brushSizeInput.addEventListener('input', (event) => {
-    removeBrushSize = parseInt(event.target.value, 10);
-});
 
 
 
