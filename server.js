@@ -1,84 +1,108 @@
 const express = require('express');
 const http = require('http');
-const { Server } = require('socket.io');
-
+const WebSocket = require('ws');
 const app = express();
-const server = http.createServer(app);
-const io = new Server(server);
+const PORT = 3000;
 
-const messageRateLimit = 1; // Max messages per 5 seconds
-const messageWindowMs = 3000; // Time window in milliseconds
-const messageTimestamps = {}; // Store message timestamps per socket
+// Canvas state as a sparse matrix
+let canvasState = {};
 
+const MAX_CONNECTIONS_PER_IP = 5; // Max connections per IP
+const MESSAGE_RATE_LIMIT = 2; // Max messages per second per IP
+const MESSAGE_RATE_INTERVAL = 1000; // Time window in milliseconds
+const MAX_PIXEL_UPDATES = 500; // Max pixels updated in one request
+
+const ipConnections = new Map(); // { ip: { connectionCount, messageCount, lastRateCheck } }
+
+// Static files
 app.use(express.static('public'));
 
-// Initialize sandbox state and chat history
-const gridSize = 500;
-const sandbox = Array.from({ length: gridSize }, () =>
-    Array(gridSize).fill(null)
-);
-const chatHistory = [];
+// REST API for initial canvas state
+app.get('/canvas', (req, res) => {
+    res.json({ canvasState });
+});
 
-// Store connected users and their usernames
-const users = {};
+// HTTP and WebSocket servers
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
 
-io.on('connection', (socket) => {
-    console.log('A user connected:', socket.id);
+wss.on('connection', (ws, req) => {
+    const ip = req.socket.remoteAddress;
 
-    // Send initial sandbox and chat data to the new user
-    socket.emit('initialize sandbox', sandbox);
-    socket.emit('initialize chat', chatHistory);
+    if (!ipConnections.has(ip)) {
+        ipConnections.set(ip, { connectionCount: 0, messageCount: 0, lastRateCheck: Date.now() });
+    }
 
-    // Handle username setting
-    socket.on('set username', (username) => {
-        users[socket.id] = username;
-        io.emit('update users', Object.values(users)); // Broadcast updated user list
+    const ipData = ipConnections.get(ip);
+
+    // Enforce connection limits
+    if (ipData.connectionCount >= MAX_CONNECTIONS_PER_IP) {
+        ws.close(1008, 'Too many connections from this IP');
+        return;
+    }
+
+    ipData.connectionCount += 1;
+
+    ws.on('message', (message) => {
+        try {
+            const now = Date.now();
+
+            // Rate-limit messages
+            if (now - ipData.lastRateCheck > MESSAGE_RATE_INTERVAL) {
+                ipData.lastRateCheck = now;
+                ipData.messageCount = 0;
+            }
+
+            ipData.messageCount += 1;
+
+            if (ipData.messageCount > MESSAGE_RATE_LIMIT) {
+                ws.close(1008, 'Message rate limit exceeded');
+                return;
+            }
+
+            const { type, data } = JSON.parse(message);
+
+            if (type === 'updateCanvas') {
+                const updates = Object.entries(data);
+
+                if (updates.length > MAX_PIXEL_UPDATES) {
+                    ws.send(JSON.stringify({ type: 'error', message: 'Too many pixels updated at once' }));
+                    return;
+                }
+
+                updates.forEach(([key, color]) => {
+                    if (color === null) {
+                        delete canvasState[key];
+                    } else {
+                        canvasState[key] = color;
+                    }
+                });
+
+                wss.clients.forEach((client) => {
+                    if (client !== ws && client.readyState === WebSocket.OPEN) {
+                        client.send(JSON.stringify({ type: 'updateCanvas', data }));
+                    }
+                });
+            } else if (type === 'chatMessage') {
+                wss.clients.forEach((client) => {
+                    if (client.readyState === WebSocket.OPEN) {
+                        client.send(JSON.stringify({ type: 'chatMessage', data }));
+                    }
+                });
+            }
+        } catch (err) {
+            console.error('Error processing message:', err);
+        }
     });
 
-    // Handle chat messages
-    socket.on('chat message', ({ username, message }) => {
-        const now = Date.now();
-    
-        if (!messageTimestamps[socket.id]) {
-            messageTimestamps[socket.id] = [];
+    ws.on('close', () => {
+        ipData.connectionCount -= 1;
+        if (ipData.connectionCount === 0) {
+            ipConnections.delete(ip);
         }
-    
-        // Filter out timestamps outside the rate limit window
-        messageTimestamps[socket.id] = messageTimestamps[socket.id].filter(
-            (timestamp) => now - timestamp < messageWindowMs
-        );
-    
-        if (messageTimestamps[socket.id].length < messageRateLimit) {
-            const sanitizedMessage = message.replace(/[^\w\s.,!?'"()-]/g, '');
-            messageTimestamps[socket.id].push(now);
-    
-            const timestamp = new Date().toISOString();
-            const chatMessage = { username, message: sanitizedMessage, timestamp };
-            chatHistory.push(chatMessage);
-            io.emit('chat message', chatMessage); // Broadcast to all users
-        } else {
-            socket.emit('rate limit warning', 'You are sending messages too quickly!');
-        }
-    });
-
-    // Handle sandbox updates
-    socket.on('update grid', ({ x, y, value }) => {
-        if (sandbox[y] && sandbox[y][x] !== undefined) {
-            sandbox[y][x] = value;
-            io.emit('update grid', { x, y, value }); // Broadcast to all users
-        }
-    });
-
-    // Handle user disconnect
-    socket.on('disconnect', () => {
-        delete users[socket.id];
-        io.emit('update users', Object.values(users)); // Update user list
     });
 });
 
-
-
-server.listen(3000, () => {
-    console.log('Server listening on http://localhost:3000');
+server.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
 });
-

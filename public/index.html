@@ -3,35 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Infinite Sandbox with Chat</title>
+    <title>Collaborative Drawing</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <!-- Infinite Sandbox -->
-    <div id="sandbox-container">
-        <canvas id="sandbox"></canvas>
-        <div id="tools">
-            <button id="add-pixel">Add pixel</button>
-            <button id="remove-pixel">Remove pixel</button>
-            <input type="color" id="color-picker" value="#8B4513">
-            <input type="range" id="brush-size" min="1" max="10" value="3">
-        </div>
-        <div id="user-list-container">
-            <h3>Users</h3>
-            <ul id="user-list"></ul>
-        </div>
+    <canvas id="drawingCanvas"></canvas>
+    <div id="colorPickerContainer">
+        <input type="color" id="colorPicker" />
+        <div id="selectedColor"></div>
+        <button id="eraserButton">Eraser</button>
     </div>
-
-    <!-- Chat -->
-    <div id="chat-container">
-        <ul id="messages"></ul>
-        <form id="chat-form">
-            <input id="message-input" autocomplete="off" placeholder="Type a message..." />
-            <button>Send</button>
-        </form>
+    <div id="chat">
+        <div id="messages"></div>
+        <input type="text" id="chatInput" placeholder="Type a message...">
     </div>
-
-    <script src="/socket.io/socket.io.js"></script>
     <script src="script.js"></script>
 </body>
 </html>

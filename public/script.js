@@ -1,256 +1,152 @@
-const socket = io();
-
-// Chat Logic
-let username = localStorage.getItem('username') || '';
-
-if (!username) {
-    username = prompt('Enter a username:');
-    localStorage.setItem('username', username);
-}
-
-socket.emit('set username', username);
-
-
-const chatForm = document.getElementById('chat-form');
-const messageInput = document.getElementById('message-input');
+const canvas = document.getElementById('drawingCanvas');
+const ctx = canvas.getContext('2d');
+const colorPicker = document.getElementById('colorPicker');
+const selectedColorDisplay = document.getElementById('selectedColor');
+const eraserButton = document.getElementById('eraserButton');
+const chatInput = document.getElementById('chatInput');
 const messages = document.getElementById('messages');
-const userList = document.getElementById('user-list');
+const socket = new WebSocket(`ws://${location.host}`);
 
-chatForm.addEventListener('submit', (event) => {
-    event.preventDefault();
-    const message = messageInput.value.trim();
-    if (message) {
-        const sanitizedMessage = message.replace(/[^\w\s.,!?'"()-]/g, '');
-        socket.emit('chat message', { username, message: sanitizedMessage });
-        messageInput.value = '';
-    }
-});
+const PIXEL_SIZE = 5; // Size of each pixel
+const UPDATE_INTERVAL = 500; // 0.5 seconds for batched updates
+const CHAT_COOLDOWN = 2000; // 5 seconds cooldown for chat messages
+let drawing = false;
+let color = '#000000';
+let lastPos = null;
+let localCanvasState = {}; // Track local updates
+let canSendMessage = true;
 
-socket.on('chat message', ({ username, message, timestamp }) => {
-    const li = document.createElement('li');
-    const time = new Date(timestamp).toLocaleTimeString();
-    li.textContent = `[${time}] ${username}: ${message}`;
-    messages.appendChild(li);
-    messages.scrollTop = messages.scrollHeight;
-});
+const BACKGROUND_COLOR = '#f4e2c0'; // Sand-colored background
 
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight - 10; // Reserve space for toolbar
+ctx.fillStyle = BACKGROUND_COLOR;
+ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-
-socket.on('update users', (users) => {
-    userList.innerHTML = '';
-    users.forEach((user) => {
-        const li = document.createElement('li');
-        li.textContent = user;
-        userList.appendChild(li);
+// Fetch initial canvas state
+fetch('/canvas').then((res) => res.json()).then(({ canvasState }) => {
+    Object.entries(canvasState).forEach(([key, color]) => {
+        const [x, y] = key.split('-').map(Number);
+        drawPixel(x, y, color, false); // Apply initial state
     });
 });
 
-// Sandbox Logic
-const canvas = document.getElementById('sandbox');
-const ctx = canvas.getContext('2d');
-
-canvas.width = 2000;
-canvas.height = 2000;
-
-// Tools and State
-let currentTool = 'add-pixel';
-let currentColor = '#8B4513';
-let zoomLevel = 1;
-let offsetX = 0;
-let offsetY = 0;
-
-const gridSize = 4;
-const sandbox = Array.from({ length: canvas.height / gridSize }, () =>
-    Array(canvas.width / gridSize).fill(null)
-);
-
-document.getElementById('add-pixel').onclick = () => (currentTool = 'add-pixel');
-document.getElementById('remove-pixel').onclick = () => (currentTool = 'remove-pixel');
-
-const colorPicker = document.getElementById('color-picker');
-colorPicker.addEventListener('input', (event) => {
-    currentColor = event.target.value;
+// Sync color picker with selected color
+colorPicker.addEventListener('input', () => {
+    color = colorPicker.value;
+    selectedColorDisplay.style.backgroundColor = color;
 });
 
-function screenToSandbox(clientX, clientY) {
-    const rect = canvas.getBoundingClientRect();
-    const sandboxX = (clientX - rect.left) / zoomLevel - offsetX;
-    const sandboxY = (clientY - rect.top) / zoomLevel - offsetY;
-    return { x: Math.floor(sandboxX / gridSize), y: Math.floor(sandboxY / gridSize) };
-}
-
-function constrainOffset() {
-    const maxOffsetX = -(canvas.width / gridSize) / zoomLevel + canvas.width / gridSize;
-    const maxOffsetY = -(canvas.height / gridSize) / zoomLevel + canvas.height / gridSize;
-
-    offsetX = Math.min(Math.max(offsetX, maxOffsetX), 0);
-    offsetY = Math.min(Math.max(offsetY, maxOffsetY), 0);
-}
-
-canvas.addEventListener('wheel', (event) => {
-    event.preventDefault();
-
-    const zoomFactor = 0.1;
-    const rect = canvas.getBoundingClientRect();
-
-    const pointerX = (event.clientX - rect.left) / zoomLevel;
-    const pointerY = (event.clientY - rect.top) / zoomLevel;
-
-    const oldZoomLevel = zoomLevel;
-
-    if (event.deltaY < 0) {
-        zoomLevel = Math.min(zoomLevel + zoomFactor, 5);
-    } else {
-        zoomLevel = Math.max(zoomLevel - zoomFactor, 0.5);
-    }
-
-    offsetX -= pointerX * (1 / oldZoomLevel - 1 / zoomLevel);
-    offsetY -= pointerY * (1 / oldZoomLevel - 1 / zoomLevel);
-
-    constrainOffset();
-    drawSandbox();
-});
-
-let isDrawing = false;
-
-canvas.addEventListener('mousedown', (event) => {
-    isDrawing = true; // Start drawing
-    handleDraw(event); // Update the initial pixel
-});
-
-canvas.addEventListener('mousemove', (event) => {
-    if (isDrawing) {
-        handleDraw(event); // Update pixels while dragging
-    }
-});
-
-canvas.addEventListener('mouseup', () => {
-    isDrawing = false; // Stop drawing
-});
-
-canvas.addEventListener('mouseleave', () => {
-    isDrawing = false; // Stop drawing if mouse leaves canvas
-});
-
-// Touch Events
-canvas.addEventListener('touchstart', (event) => {
-    event.preventDefault(); // Prevent scrolling
-    isDrawing = true;
-
-    const touch = event.touches[0];
-    handleDraw(touch);
-});
-canvas.addEventListener('touchmove', (event) => {
-    if (isDrawing) {
-        event.preventDefault(); // Prevent scrolling
-        const touch = event.touches[0];
-        handleDraw(touch);
-    }
-});
-canvas.addEventListener('touchend', () => {
-    isDrawing = false;
+// Handle eraser button functionality
+eraserButton.addEventListener('click', () => {
+    color = BACKGROUND_COLOR; // Set drawing color to sand color
+    selectedColorDisplay.style.backgroundColor = BACKGROUND_COLOR;
 });
 
 
-
-// Brush size slider
-const brushSizeInput = document.getElementById('brush-size');
-brushSizeInput.addEventListener('input', (event) => {
-    removeBrushSize = parseInt(event.target.value, 10);
+// Start and stop drawing
+canvas.addEventListener('mousedown', (e) => {
+    drawing = true;
+    lastPos = getCanvasCoords(e);
+    drawPixel(lastPos.x, lastPos.y, color);
 });
 
+canvas.addEventListener('mouseup', () => (drawing = false));
 
+// Handle drawing on the canvas
+canvas.addEventListener('mousemove', (e) => {
+    if (!drawing) return;
+    const newPos = getCanvasCoords(e);
+    drawLine(lastPos, newPos, color);
+    lastPos = newPos;
+});
 
-function handleDraw(inputEvent) {
-    // Determine if inputEvent is a mouse event or touch event
-    const clientX = inputEvent.clientX || inputEvent.pageX;
-    const clientY = inputEvent.clientY || inputEvent.pageY;
+// Draw a line using Bresenham's Line Algorithm
+function drawLine(start, end, color) {
+    const dx = Math.abs(end.x - start.x);
+    const dy = Math.abs(end.y - start.y);
+    const sx = start.x < end.x ? 1 : -1;
+    const sy = start.y < end.y ? 1 : -1;
+    let err = dx - dy;
 
-    const { x, y } = screenToSandbox(clientX, clientY);
+    let x = start.x;
+    let y = start.y;
 
-    if (x >= 0 && y >= 0 && x < sandbox[0].length && y < sandbox.length) {
-        if (currentTool === 'add-pixel') {
-            sandbox[y][x] = currentColor;
-            socket.emit('update grid', { x, y, value: currentColor });
-            drawCell(x, y);
-        } else if (currentTool === 'remove-pixel') {
-            for (let offsetY = -removeBrushSize; offsetY <= removeBrushSize; offsetY++) {
-                for (let offsetX = -removeBrushSize; offsetX <= removeBrushSize; offsetX++) {
-                    const brushX = x + offsetX;
-                    const brushY = y + offsetY;
-
-                    if (
-                        brushX >= 0 &&
-                        brushY >= 0 &&
-                        brushX < sandbox[0].length &&
-                        brushY < sandbox.length &&
-                        Math.sqrt(offsetX ** 2 + offsetY ** 2) <= removeBrushSize
-                    ) {
-                        sandbox[brushY][brushX] = null;
-                        socket.emit('update grid', { x: brushX, y: brushY, value: null });
-                        drawCell(brushX, brushY);
-                    }
-                }
-            }
+    while (true) {
+        drawPixel(x, y, color);
+        if (x === end.x && y === end.y) break;
+        const e2 = 2 * err;
+        if (e2 > -dy) {
+            err -= dy;
+            x += sx;
+        }
+        if (e2 < dx) {
+            err += dx;
+            y += sy;
         }
     }
 }
 
+// Draw a single pixel
+function drawPixel(x, y, color, updateState = true) {
+    const pixelColor = color || BACKGROUND_COLOR;
+    ctx.fillStyle = pixelColor;
+    ctx.fillRect(x * PIXEL_SIZE, y * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE);
 
-
-
-function drawCell(x, y) {
-    const cell = sandbox[y][x];
-    ctx.fillStyle = cell || '#A9A9A9';
-    ctx.fillRect(x * gridSize, y * gridSize, gridSize, gridSize);
+    if (updateState) {
+        const key = `${x}-${y}`;
+        if (color === null) {
+            delete localCanvasState[key]; // Mark pixel for deletion
+        } else {
+            localCanvasState[key] = color; // Update pixel color
+        }
+    }
 }
 
-function drawSandbox() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear canvas
-    ctx.save();
-    ctx.scale(zoomLevel, zoomLevel);
-    ctx.translate(offsetX, offsetY);
-
-    sandbox.forEach((row, y) => {
-        row.forEach((cell, x) => {
-            if (cell) {
-                drawCell(x, y);
-            }
-        });
-    });
-
-    ctx.restore();
+// Get canvas coordinates from mouse event
+function getCanvasCoords(e) {
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.floor((e.clientX - rect.left) / PIXEL_SIZE);
+    const y = Math.floor((e.clientY - rect.top) / PIXEL_SIZE);
+    return { x, y };
 }
 
-// Load sandbox state
-socket.on('initialize sandbox', (serverSandbox) => {
-    serverSandbox.forEach((row, y) => {
-        row.forEach((cell, x) => {
-            sandbox[y][x] = cell;
+// Send local updates to the server periodically
+setInterval(() => {
+    if (Object.keys(localCanvasState).length > 0) {
+        socket.send(JSON.stringify({ type: 'updateCanvas', data: localCanvasState }));
+        localCanvasState = {}; // Clear local state after sending
+    }
+}, UPDATE_INTERVAL);
+
+// Apply updates from other users
+socket.addEventListener('message', (event) => {
+    const { type, data } = JSON.parse(event.data);
+
+    if (type === 'updateCanvas') {
+        Object.entries(data).forEach(([key, color]) => {
+            const [x, y] = key.split('-').map(Number);
+            drawPixel(x, y, color, false); // Apply updates without modifying local state
         });
-    });
-    drawSandbox();
+    }
+
+    if (type === 'chatMessage') {
+        const messageElem = document.createElement('div');
+        messageElem.textContent = data;
+        messages.appendChild(messageElem);
+        messages.scrollTop = messages.scrollHeight;
+    }
 });
 
-// Load chat history
-socket.on('initialize chat', (chatHistory) => {
-    chatHistory.forEach(({ username, message, timestamp }) => {
-        const li = document.createElement('li');
-        const time = new Date(timestamp).toLocaleTimeString();
-        li.textContent = `[${time}] ${username}: ${message}`;
-        messages.appendChild(li);
-    });
-    messages.scrollTop = messages.scrollHeight;
+// Handle chat input with cooldown
+chatInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && canSendMessage) {
+        const message = chatInput.value.trim();
+        if (message) {
+            socket.send(JSON.stringify({ type: 'chatMessage', data: message }));
+            chatInput.value = '';
+            canSendMessage = false;
+            setTimeout(() => (canSendMessage = true), CHAT_COOLDOWN); // Enforce cooldown
+        }
+    }
 });
-
-socket.on('update grid', ({ x, y, value }) => {
-    sandbox[y][x] = value;
-    drawSandbox();
-});
-
-socket.on('rate limit warning', (warning) => {
-    console.warn(warning);
-});
-
-
-drawSandbox();
