@@ -132,6 +132,9 @@ canvas.addEventListener('mouseleave', () => {
     isDrawing = false; // Stop drawing if mouse leaves canvas
 });
 
+let removeBrushSize = 3; // Brush size for removing pixels (in grid cells)
+
+
 function handleDraw(event) {
     const { x, y } = screenToSandbox(event.clientX, event.clientY);
 
@@ -139,14 +142,31 @@ function handleDraw(event) {
         if (currentTool === 'add-pixel') {
             sandbox[y][x] = currentColor;
             socket.emit('update grid', { x, y, value: currentColor });
+            drawCell(x, y);
         } else if (currentTool === 'remove-pixel') {
-            sandbox[y][x] = null;
-            socket.emit('update grid', { x, y, value: null });
+            // Remove pixels within the brush radius
+            for (let offsetY = -removeBrushSize; offsetY <= removeBrushSize; offsetY++) {
+                for (let offsetX = -removeBrushSize; offsetX <= removeBrushSize; offsetX++) {
+                    const brushX = x + offsetX;
+                    const brushY = y + offsetY;
+
+                    if (
+                        brushX >= 0 &&
+                        brushY >= 0 &&
+                        brushX < sandbox[0].length &&
+                        brushY < sandbox.length &&
+                        Math.sqrt(offsetX ** 2 + offsetY ** 2) <= removeBrushSize
+                    ) {
+                        sandbox[brushY][brushX] = null;
+                        socket.emit('update grid', { x: brushX, y: brushY, value: null });
+                        drawCell(brushX, brushY);
+                    }
+                }
+            }
         }
-        drawCell(x, y); // Redraw the affected cell
-  
     }
 }
+
 
 
 function drawCell(x, y) {
