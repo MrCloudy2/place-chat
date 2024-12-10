@@ -166,6 +166,11 @@ function handleDraw(event) {
         }
     }
 }
+// Brush size slider
+const brushSizeInput = document.getElementById('brush-size');
+brushSizeInput.addEventListener('input', (event) => {
+    removeBrushSize = parseInt(event.target.value, 10);
+});
 
 
 
