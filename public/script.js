@@ -111,7 +111,28 @@ canvas.addEventListener('wheel', (event) => {
     drawSandbox();
 });
 
+let isDrawing = false;
+
 canvas.addEventListener('mousedown', (event) => {
+    isDrawing = true; // Start drawing
+    handleDraw(event); // Update the initial pixel
+});
+
+canvas.addEventListener('mousemove', (event) => {
+    if (isDrawing) {
+        handleDraw(event); // Update pixels while dragging
+    }
+});
+
+canvas.addEventListener('mouseup', () => {
+    isDrawing = false; // Stop drawing
+});
+
+canvas.addEventListener('mouseleave', () => {
+    isDrawing = false; // Stop drawing if mouse leaves canvas
+});
+
+function handleDraw(event) {
     const { x, y } = screenToSandbox(event.clientX, event.clientY);
 
     if (x >= 0 && y >= 0 && x < sandbox[0].length && y < sandbox.length) {
@@ -122,10 +143,11 @@ canvas.addEventListener('mousedown', (event) => {
             sandbox[y][x] = null;
             socket.emit('update grid', { x, y, value: null });
         }
+        drawCell(x, y); // Redraw the affected cell
+  
     }
+}
 
-    drawCell(x, y); // Only redraw the affected cell
-});
 
 function drawCell(x, y) {
     const cell = sandbox[y][x];
