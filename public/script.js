@@ -1,13 +1,15 @@
 const socket = io();
 
 // Chat Logic
-let username = '';
+let username = localStorage.getItem('username') || '';
 
-while (!username) {
+if (!username) {
     username = prompt('Enter a username:');
+    localStorage.setItem('username', username);
 }
 
 socket.emit('set username', username);
+
 
 const chatForm = document.getElementById('chat-form');
 const messageInput = document.getElementById('message-input');
@@ -24,12 +26,15 @@ chatForm.addEventListener('submit', (event) => {
     }
 });
 
-socket.on('chat message', ({ username, message }) => {
+socket.on('chat message', ({ username, message, timestamp }) => {
     const li = document.createElement('li');
-    li.textContent = `${username}: ${message}`;
+    const time = new Date(timestamp).toLocaleTimeString();
+    li.textContent = `[${time}] ${username}: ${message}`;
     messages.appendChild(li);
     messages.scrollTop = messages.scrollHeight;
 });
+
+
 
 socket.on('update users', (users) => {
     userList.innerHTML = '';
@@ -48,7 +53,7 @@ canvas.width = 2000;
 canvas.height = 2000;
 
 // Tools and State
-let currentTool = 'add-dirt';
+let currentTool = 'add-pixel';
 let currentColor = '#8B4513';
 let zoomLevel = 1;
 let offsetX = 0;
@@ -59,8 +64,8 @@ const sandbox = Array.from({ length: canvas.height / gridSize }, () =>
     Array(canvas.width / gridSize).fill(null)
 );
 
-document.getElementById('add-dirt').onclick = () => (currentTool = 'add-dirt');
-document.getElementById('remove-dirt').onclick = () => (currentTool = 'remove-dirt');
+document.getElementById('add-pixel').onclick = () => (currentTool = 'add-pixel');
+document.getElementById('remove-pixel').onclick = () => (currentTool = 'remove-pixel');
 
 const colorPicker = document.getElementById('color-picker');
 colorPicker.addEventListener('input', (event) => {
@@ -110,22 +115,26 @@ canvas.addEventListener('mousedown', (event) => {
     const { x, y } = screenToSandbox(event.clientX, event.clientY);
 
     if (x >= 0 && y >= 0 && x < sandbox[0].length && y < sandbox.length) {
-        if (currentTool === 'add-dirt') {
+        if (currentTool === 'add-pixel') {
             sandbox[y][x] = currentColor;
             socket.emit('update grid', { x, y, value: currentColor });
-        } else if (currentTool === 'remove-dirt') {
+        } else if (currentTool === 'remove-pixel') {
             sandbox[y][x] = null;
             socket.emit('update grid', { x, y, value: null });
         }
     }
 
-    drawSandbox();
+    drawCell(x, y); // Only redraw the affected cell
 });
 
-function drawSandbox() {
-    ctx.fillStyle = '#A9A9A9'; // White background
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+function drawCell(x, y) {
+    const cell = sandbox[y][x];
+    ctx.fillStyle = cell || '#A9A9A9';
+    ctx.fillRect(x * gridSize, y * gridSize, gridSize, gridSize);
+}
 
+function drawSandbox() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear canvas
     ctx.save();
     ctx.scale(zoomLevel, zoomLevel);
     ctx.translate(offsetX, offsetY);
@@ -133,8 +142,7 @@ function drawSandbox() {
     sandbox.forEach((row, y) => {
         row.forEach((cell, x) => {
             if (cell) {
-                ctx.fillStyle = cell;
-                ctx.fillRect(x * gridSize, y * gridSize, gridSize, gridSize);
+                drawCell(x, y);
             }
         });
     });
@@ -142,6 +150,7 @@ function drawSandbox() {
     ctx.restore();
 }
 
+// Load sandbox state
 socket.on('initialize sandbox', (serverSandbox) => {
     serverSandbox.forEach((row, y) => {
         row.forEach((cell, x) => {
@@ -151,9 +160,25 @@ socket.on('initialize sandbox', (serverSandbox) => {
     drawSandbox();
 });
 
+// Load chat history
+socket.on('initialize chat', (chatHistory) => {
+    chatHistory.forEach(({ username, message, timestamp }) => {
+        const li = document.createElement('li');
+        const time = new Date(timestamp).toLocaleTimeString();
+        li.textContent = `[${time}] ${username}: ${message}`;
+        messages.appendChild(li);
+    });
+    messages.scrollTop = messages.scrollHeight;
+});
+
 socket.on('update grid', ({ x, y, value }) => {
     sandbox[y][x] = value;
     drawSandbox();
 });
+
+socket.on('rate limit warning', (warning) => {
+    console.warn(warning);
+});
+
 
 drawSandbox();

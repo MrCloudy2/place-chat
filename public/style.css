@@ -117,3 +117,20 @@ body {
     font-size: 14px;
     border-bottom: 1px solid #ddd;
 }
+
+@media (max-width: 768px) {
+    #chat-container {
+        width: 90%;
+        height: 300px;
+        right: 5%;
+        bottom: 5%;
+    }
+
+    #tools {
+        flex-direction: column;
+    }
+
+    #sandbox-container {
+        height: calc(100vh - 350px); /* Adjust sandbox size to accommodate chat */
+    }
+}
