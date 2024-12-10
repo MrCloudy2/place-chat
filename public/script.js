@@ -5,8 +5,7 @@ const selectedColorDisplay = document.getElementById('selectedColor');
 const eraserButton = document.getElementById('eraserButton');
 const chatInput = document.getElementById('chatInput');
 const messages = document.getElementById('messages');
-const socket = new WebSocket(`wss://${window.location.host}`);
-
+const socket = new WebSocket(`ws://${location.host}`);
 
 const PIXEL_SIZE = 5; // Size of each pixel
 const UPDATE_INTERVAL = 500; // 0.5 seconds for batched updates
@@ -40,8 +39,8 @@ colorPicker.addEventListener('input', () => {
 
 // Handle eraser button functionality
 eraserButton.addEventListener('click', () => {
-    color = BACKGROUND_COLOR; // Set drawing color to sand color
-    selectedColorDisplay.style.backgroundColor = BACKGROUND_COLOR;
+    color = BACKGROUND_COLOR;
+    colorPicker.value = BACKGROUND_COLOR; // Sync color picker with eraser color
 });
 
 

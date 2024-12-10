@@ -7,16 +7,21 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <canvas id="drawingCanvas"></canvas>
-    <div id="colorPickerContainer">
-        <input type="color" id="colorPicker" />
-        <div id="selectedColor"></div>
-        <button id="eraserButton">Eraser</button>
+    <!-- Toolbar -->
+    <div id="toolbar">
+        <input type="color" id="colorPicker" value="#000000" title="Choose a color" />
+        <button id="eraserButton" title="Eraser">🧹 Eraser</button>
     </div>
+
+    <!-- Canvas for Drawing -->
+    <canvas id="drawingCanvas"></canvas>
+
+    <!-- Chat Section -->
     <div id="chat">
         <div id="messages"></div>
         <input type="text" id="chatInput" placeholder="Type a message...">
     </div>
+
     <script src="script.js"></script>
 </body>
 </html>
