@@ -1,19 +1,20 @@
 const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
-const app = express();
-const PORT = process.env.PORT || 3000;
 
+const app = express();
+const PORT = 3000;
 
 // Canvas state as a sparse matrix
 let canvasState = {};
 
 const MAX_CONNECTIONS_PER_IP = 5; // Max connections per IP
-const MESSAGE_RATE_LIMIT = 2; // Max messages per second per IP
-const MESSAGE_RATE_INTERVAL = 1000; // Time window in milliseconds
-const MAX_PIXEL_UPDATES = 500; // Max pixels updated in one request
+const CHAT_RATE_LIMIT = 3; // Max chat messages per 5 seconds
+const CHAT_RATE_INTERVAL = 5000; // 5 seconds window for chat rate limit
+const MAX_CHAT_LENGTH = 50; // Max length for chat messages
+const MAX_PIXEL_UPDATES = 99999999999999; // Max pixels updated in one request
 
-const ipConnections = new Map(); // { ip: { connectionCount, messageCount, lastRateCheck } }
+const ipConnections = new Map(); // { ip: { connectionCount, chatRateData } }
 
 // Static files
 app.use(express.static('public'));
@@ -31,7 +32,7 @@ wss.on('connection', (ws, req) => {
     const ip = req.socket.remoteAddress;
 
     if (!ipConnections.has(ip)) {
-        ipConnections.set(ip, { connectionCount: 0, messageCount: 0, lastRateCheck: Date.now() });
+        ipConnections.set(ip, { connectionCount: 0, chatRateData: { lastCheck: Date.now(), messageCount: 0 } });
     }
 
     const ipData = ipConnections.get(ip);
@@ -46,30 +47,16 @@ wss.on('connection', (ws, req) => {
 
     ws.on('message', (message) => {
         try {
-            const now = Date.now();
-
-            // Rate-limit messages
-            if (now - ipData.lastRateCheck > MESSAGE_RATE_INTERVAL) {
-                ipData.lastRateCheck = now;
-                ipData.messageCount = 0;
-            }
-
-            ipData.messageCount += 1;
-
-            if (ipData.messageCount > MESSAGE_RATE_LIMIT) {
-                ws.close(1008, 'Message rate limit exceeded');
-                return;
-            }
-
             const { type, data } = JSON.parse(message);
 
             if (type === 'updateCanvas') {
+                // Handle canvas updates (no rate limiting here)
                 const updates = Object.entries(data);
 
-                if (updates.length > MAX_PIXEL_UPDATES) {
-                    ws.send(JSON.stringify({ type: 'error', message: 'Too many pixels updated at once' }));
-                    return;
-                }
+             //   if (updates.length > MAX_PIXEL_UPDATES) {
+              //      ws.send(JSON.stringify({ type: 'error', message: 'Too many pixels updated at once' }));
+              //      return;
+             //   }
 
                 updates.forEach(([key, color]) => {
                     if (color === null) {
@@ -85,6 +72,30 @@ wss.on('connection', (ws, req) => {
                     }
                 });
             } else if (type === 'chatMessage') {
+                // Validate chat message length
+                if (data.length > MAX_CHAT_LENGTH) {
+                    ws.send(JSON.stringify({ type: 'error', message: 'Chat message too long (max 50 characters)' }));
+                    return;
+                }
+
+                // Handle chat messages with rate limiting
+                const now = Date.now();
+                const chatRateData = ipData.chatRateData;
+
+                if (now - chatRateData.lastCheck > CHAT_RATE_INTERVAL) {
+                    // Reset the rate limiter for the new window
+                    chatRateData.lastCheck = now;
+                    chatRateData.messageCount = 0;
+                }
+
+                if (chatRateData.messageCount >= CHAT_RATE_LIMIT) {
+                    ws.send(JSON.stringify({ type: 'error', message: 'Chat rate limit exceeded' }));
+                    return;
+                }
+
+                chatRateData.messageCount += 1;
+
+                // Broadcast the chat message
                 wss.clients.forEach((client) => {
                     if (client.readyState === WebSocket.OPEN) {
                         client.send(JSON.stringify({ type: 'chatMessage', data }));

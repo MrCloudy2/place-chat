@@ -7,8 +7,8 @@ const chatInput = document.getElementById('chatInput');
 const messages = document.getElementById('messages');
 const socket = new WebSocket(`ws://${location.host}`);
 
-const PIXEL_SIZE = 5; // Size of each pixel
-const UPDATE_INTERVAL = 500; // 0.5 seconds for batched updates
+const PIXEL_SIZE = 2; // Size of each pixel
+const UPDATE_INTERVAL = 50; // 0.5 seconds for batched updates
 const CHAT_COOLDOWN = 2000; // 5 seconds cooldown for chat messages
 let drawing = false;
 let color = '#000000';
